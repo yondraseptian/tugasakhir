@@ -16,21 +16,49 @@ STORE = {'sales_df': None, 'recipes': None, 'inventory': None}
 
 @app.post('/upload-sales')
 async def upload_sales(file: UploadFile = File(...)):
+    import io
+    import pandas as pd
+
+    # --- Baca isi file CSV ---
     content = await file.read()
     try:
         df = pd.read_csv(io.BytesIO(content))
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f'Invalid CSV: {e}')
-    # normalize expected columns
+        raise HTTPException(status_code=400, detail=f'Invalid CSV file: {e}')
+
+    # --- Normalisasi nama kolom ---
     df.columns = [c.lower().strip() for c in df.columns]
-    if 'sales_date' not in df.columns or 'menu' not in df.columns or 'qty' not in df.columns:
-        raise HTTPException(status_code=400, detail='CSV must include sales_date, menu, qty columns')
+
+    # --- Validasi kolom wajib ---
+    expected_cols = ['sales_date', 'menu', 'qty']
+    for col in expected_cols:
+        if col not in df.columns:
+            raise HTTPException(
+                status_code=400,
+                detail=f'Missing required column: {col}'
+            )
+
+    # --- Konversi tanggal & qty ---
     df['sales_date'] = pd.to_datetime(df['sales_date'], errors='coerce')
-    df = df.dropna(subset=['sales_date'])
+    df = df.dropna(subset=['sales_date'])  # buang tanggal invalid
+
+    df['qty'] = pd.to_numeric(df['qty'], errors='coerce').fillna(0).astype(int)
+
+    # --- Ambil bulan dari tanggal ---
     df['month'] = df['sales_date'].dt.to_period('M').dt.to_timestamp()
-    agg = df.groupby(['menu','month']).agg({'qty':'sum'}).reset_index()
+
+    # --- Agregasi total qty per menu per bulan ---
+    agg = df.groupby(['menu', 'month']).agg({'qty': 'sum'}).reset_index()
+
+    # --- Simpan ke memori sementara ---
     STORE['sales_df'] = agg
-    return {'status':'ok','preview': agg.head(10).to_dict(orient='records')}
+
+    return {
+        'status': 'ok',
+        'records_loaded': len(df),
+        'menus_detected': agg['menu'].unique().tolist(),
+        'preview': agg.head(10).to_dict(orient='records')
+    }
 
 @app.get('/menus')
 def list_menus():
@@ -47,33 +75,63 @@ class ForecastRequest(BaseModel):
 
 @app.post('/forecast')
 def forecast(req: ForecastRequest):
-    if STORE['sales_df'] is None:
+    if STORE.get('sales_df') is None:
         raise HTTPException(status_code=404, detail='No sales uploaded')
-    results = {}
+    
     df = STORE['sales_df']
+    results = {}
+
     for menu in req.menus:
-        ts = df[df['menu']==menu].set_index('month').sort_index()['qty']
-        ts = ts.asfreq('MS').fillna(0)
+        ts = df[df['menu'] == menu].set_index('month').sort_index()['qty']
+        ts = ts.asfreq('M').fillna(0)  # ✅ ubah ke 'M'
+
+        # Jika tidak ada data valid
+        if ts.empty or ts.mean() == 0 or pd.isna(ts.mean()):
+            raise HTTPException(status_code=400, detail=f"No valid data for menu '{menu}'")
+
+        # fallback jika data < 6
         if len(ts.dropna()) < 6:
-            # fallback simple average
-            forecast_values = [int(ts.mean())]*req.periods
-            idx = pd.period_range(ts.index[-1] + pd.offsets.MonthBegin(1), periods=req.periods, freq='MS')
+            avg = ts.mean()
+            if pd.isna(avg):
+                avg = 0
+            forecast_values = [int(round(avg))] * req.periods
+            idx = pd.period_range(ts.index[-1] + pd.offsets.MonthBegin(1),
+                                  periods=req.periods, freq='M')  # ✅ ubah ke 'M'
         else:
             if pm is not None:
                 try:
-                    model = pm.auto_arima(ts, seasonal=True, m=12, error_action='ignore', suppress_warnings=True)
+                    model = pm.auto_arima(
+                        ts,
+                        seasonal=True,
+                        m=12,
+                        error_action='ignore',
+                        suppress_warnings=True
+                    )
                     f = model.predict(n_periods=req.periods)
                     forecast_values = [int(max(0, round(x))) for x in f]
-                    idx = pd.period_range(ts.index[-1] + pd.offsets.MonthBegin(1), periods=req.periods, freq='MS')
-                except Exception:
-                    forecast_values = [int(ts.mean())]*req.periods
-                    idx = pd.period_range(ts.index[-1] + pd.offsets.MonthBegin(1), periods=req.periods, freq='MS')
+                except Exception as e:
+                    avg = ts.mean()
+                    forecast_values = [int(round(avg))] * req.periods
             else:
-                # pmdarima not installed: use rolling mean as a naive fallback
-                forecast_values = [int(ts.rolling(3,min_periods=1).mean().iloc[-1])]*req.periods
-                idx = pd.period_range(ts.index[-1] + pd.offsets.MonthBegin(1), periods=req.periods, freq='MS')
-        results[menu] = {'index': [d.strftime('%Y-%m-%d') for d in idx], 'forecast': forecast_values}
-    return results
+                last_mean = ts.rolling(3, min_periods=1).mean().iloc[-1]
+                forecast_values = [int(round(last_mean))] * req.periods
+
+            idx = pd.period_range(ts.index[-1] + pd.offsets.MonthBegin(1),
+                                  periods=req.periods, freq='M')  # ✅ ubah ke 'M'
+
+        results[menu] = {
+            'index': [d.strftime('%Y-%m-%d') for d in idx],
+            'forecast': forecast_values
+        }
+
+    return {'status': 'ok', 'forecasts': results}
+
+@app.get("/debug-sales")
+def debug_sales():
+    if STORE.get("sales_df") is None:
+        return {"detail": "No sales uploaded"}
+    df = STORE["sales_df"]
+    return df.to_dict(orient="records")
 
 @app.post('/convert-to-ingredients')
 def convert_to_ingredients(payload: dict):

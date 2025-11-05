@@ -1,0 +1,97 @@
+Untuk mengikuti proposal awal yang Anda buat, yang berfokus pada prediksi kebutuhan bahan baku menggunakan ARIMA, kita harus memastikan bahwa langkah-langkah yang diambil sejalan dengan tujuan utama proposal, yaitu memprediksi penjualan bahan baku berdasarkan menu yang terlaris dan kemudian menghitung kebutuhan bahan baku berdasarkan prediksi penjualan tersebut.
+
+Berikut adalah pendekatan yang dapat kita ambil untuk menyusun aplikasi sesuai dengan proposal:
+
+1. Pemilihan Menu yang Paling Sering Terjual
+
+Tujuan: Untuk fokus pada menu yang sering terjual, kita akan memilih menu berdasarkan penjualan terbanyak dalam periode tertentu (misalnya, bulan atau kuartal). Ini sesuai dengan tujuan untuk memprediksi kebutuhan bahan baku berdasarkan menu terlaris.
+
+Metode: Menggunakan data penjualan untuk memilih menu yang paling sering terjual pada bulan tersebut dan membangun model ARIMA untuk masing-masing menu.
+
+2. Pembangunan Model ARIMA per Menu
+
+Tujuan: Membangun model ARIMA untuk masing-masing menu yang terlaris guna memprediksi penjualannya di masa depan (misalnya, bulan depan atau tahun depan).
+
+Metode: Membuat satu model ARIMA untuk setiap menu terlaris. Prediksi ini akan memberikan gambaran yang lebih akurat mengenai penjualan setiap menu yang selanjutnya bisa dikonversi ke dalam kebutuhan bahan baku.
+
+3. Konversi Prediksi Penjualan ke Kebutuhan Bahan Baku
+
+Tujuan: Setelah memprediksi penjualan, kita akan menghitung kebutuhan bahan baku berdasarkan rasio bahan baku yang digunakan untuk setiap menu.
+
+Metode: Setiap menu akan memiliki rasio bahan baku tertentu (misalnya, berapa banyak kopi, susu, gula yang digunakan untuk satu menu). Dengan prediksi penjualan, kita dapat mengonversi jumlah produk terjual menjadi jumlah bahan baku yang diperlukan.
+
+4. Integrasi dalam Sistem Manajemen Stok
+
+Tujuan: Membangun aplikasi yang secara otomatis menghitung prediksi kebutuhan bahan baku berdasarkan penjualan yang diprediksi, dan dapat mengelola stok bahan baku dengan lebih efisien.
+
+Metode: Aplikasi ini akan memproses prediksi penjualan dari model ARIMA dan menghitung jumlah bahan baku yang dibutuhkan untuk setiap produk, kemudian menyarankan pengadaan bahan baku yang diperlukan.
+
+Langkah-langkah Eksekusi:
+
+Pilih Menu Terlaris: Tentukan menu berdasarkan penjualan tertinggi di bulan yang relevan.
+
+Bangun Model ARIMA untuk Setiap Menu Terlaris: Bangun model ARIMA untuk memprediksi penjualan setiap menu.
+
+Konversi Prediksi Penjualan ke Kebutuhan Bahan Baku: Gunakan rasio bahan baku per menu untuk menghitung kebutuhan bahan baku berdasarkan hasil prediksi penjualan.
+
+Buat Aplikasi: Bangun aplikasi yang mengotomatisasi proses ini dan memberikan rekomendasi stok bahan baku.
+
+
+
+Alur Aplikasi:
+
+Input Data:
+
+Pengguna mengunggah data penjualan dari Januari hingga Desember 2024 dalam format CSV atau Excel.
+
+Data penjualan harus mencakup kolom:
+
+Sales Date: Tanggal transaksi.
+
+Menu: Nama menu yang terjual.
+
+Qty: Jumlah unit yang terjual.
+
+Nett Sales: Total penjualan setelah diskon.
+
+Total After Bill Discount: Penjualan setelah diskon diterapkan.
+
+Praproses Data:
+
+Aplikasi membersihkan dan memformat data.
+
+Mengelompokkan data berdasarkan menu dan bulan/tahun untuk menghitung total penjualan per menu.
+
+Menyusun data yang dikelompokkan berdasarkan bulan dan menu, dan memilih menu yang paling sering terjual berdasarkan jumlah Qty.
+
+Pemilihan Menu Terlaris:
+
+Aplikasi akan menampilkan daftar menu terlaris berdasarkan penjualan tertinggi.
+
+Pengguna dapat memilih beberapa menu terlaris yang ingin diprediksi penjualannya.
+
+Bangun Model ARIMA untuk Prediksi Penjualan:
+
+Model ARIMA akan dibangun untuk setiap menu terlaris berdasarkan data penjualan yang sudah dipilih.
+
+Prediksi Penjualan untuk bulan-bulan mendatang (misalnya, Januari hingga Desember 2025).
+
+Konversi Prediksi Penjualan ke Kebutuhan Bahan Baku:
+
+Aplikasi menghitung kebutuhan bahan baku berdasarkan jumlah bahan yang diperlukan untuk setiap menu (misalnya, berapa banyak kopi, susu, gula yang dibutuhkan untuk 1 unit menu).
+
+Hasil Kebutuhan Bahan Baku akan ditampilkan dalam bentuk tabel yang menunjukkan jumlah bahan yang dibutuhkan per menu untuk bulan-bulan mendatang.
+
+Output:
+
+Tabel Prediksi Penjualan: Menampilkan prediksi jumlah unit yang akan terjual untuk setiap menu dalam periode yang dipilih.
+
+Tabel Kebutuhan Bahan Baku: Menampilkan jumlah bahan baku yang dibutuhkan untuk memproduksi menu yang diprediksi terjual.
+
+Grafik: Menampilkan grafik prediksi penjualan dan kebutuhan bahan baku dalam bentuk garis atau batang untuk memudahkan visualisasi tren.
+
+Output Akhir:
+
+Rekomendasi Pengadaan Stok: Aplikasi memberikan rekomendasi untuk membeli bahan baku berdasarkan hasil prediksi kebutuhan bahan baku.
+
+Laporan: Laporan prediksi penjualan dan kebutuhan bahan baku dapat diunduh dalam format CSV atau Excel untuk referensi lebih lanjut.

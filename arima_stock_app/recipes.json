@@ -1,0 +1,38 @@
+{
+  "Americano": [
+    {
+      "ingredient": "coffee_powder",
+      "qty_per_unit": 10,
+      "unit": "gram"
+    },
+    {
+      "ingredient": "water",
+      "qty_per_unit": 200,
+      "unit": "ml"
+    }
+  ],
+  "Latte": [
+    {
+      "ingredient": "coffee_powder",
+      "qty_per_unit": 8,
+      "unit": "gram"
+    },
+    {
+      "ingredient": "milk",
+      "qty_per_unit": 150,
+      "unit": "ml"
+    }
+  ],
+  "Cappuccino": [
+    {
+      "ingredient": "coffee_powder",
+      "qty_per_unit": 9,
+      "unit": "gram"
+    },
+    {
+      "ingredient": "milk",
+      "qty_per_unit": 120,
+      "unit": "ml"
+    }
+  ]
+}

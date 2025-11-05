@@ -1,0 +1,7 @@
+
+fastapi
+uvicorn[standard]
+pandas
+pmdarima>=1.8.0 ; python_version >= '3.8'
+python-multipart
+openpyxl

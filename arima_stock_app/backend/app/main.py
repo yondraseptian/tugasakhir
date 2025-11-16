@@ -28,6 +28,7 @@ async def upload_sales(file: UploadFile = File(...)):
 
     # --- Normalisasi nama kolom ---
     df.columns = [c.lower().strip() for c in df.columns]
+    df['menu'] = df['menu'].astype(str).str.strip().str.title()
 
     # --- Validasi kolom wajib ---
     expected_cols = ['sales_date', 'menu', 'qty']
@@ -77,32 +78,38 @@ class ForecastRequest(BaseModel):
 def forecast(req: ForecastRequest):
     if STORE.get('sales_df') is None:
         raise HTTPException(status_code=404, detail='No sales uploaded')
-    
-    df = STORE['sales_df']
+
+    df = STORE['sales_df'].copy()
+    df['menu'] = df['menu'].astype(str).str.strip().str.title()  # pastikan bersih
+    df['month'] = pd.to_datetime(df['month'], errors='coerce')
+
     results = {}
 
     for menu in req.menus:
-        ts = df[df['menu'] == menu].set_index('month').sort_index()['qty']
-        ts = ts.asfreq('M').fillna(0)  # ✅ ubah ke 'M'
+        # Normalisasi nama menu input juga
+        menu_norm = str(menu).strip().title()
 
-        # Jika tidak ada data valid
-        if ts.empty or ts.mean() == 0 or pd.isna(ts.mean()):
+        # Filter data
+        ts = df[df['menu'] == menu_norm].set_index('month').sort_index()['qty']
+
+        if ts.empty:
             raise HTTPException(status_code=400, detail=f"No valid data for menu '{menu}'")
 
-        # fallback jika data < 6
+        # Pastikan frekuensi bulanan
+        ts = ts.asfreq('MS').fillna(0)
+
+        # Fallback jika data < 6 titik
         if len(ts.dropna()) < 6:
-            avg = ts.mean()
-            if pd.isna(avg):
-                avg = 0
+            avg = ts.mean() if not pd.isna(ts.mean()) else 0
             forecast_values = [int(round(avg))] * req.periods
-            idx = pd.period_range(ts.index[-1] + pd.offsets.MonthBegin(1),
-                                  periods=req.periods, freq='M')  # ✅ ubah ke 'M'
+            idx = pd.date_range(ts.index[-1] + pd.offsets.MonthBegin(1),
+                                periods=req.periods, freq='MS')
         else:
             if pm is not None:
                 try:
                     model = pm.auto_arima(
                         ts,
-                        seasonal=True,
+                        seasonal=False,
                         m=12,
                         error_action='ignore',
                         suppress_warnings=True
@@ -116,10 +123,10 @@ def forecast(req: ForecastRequest):
                 last_mean = ts.rolling(3, min_periods=1).mean().iloc[-1]
                 forecast_values = [int(round(last_mean))] * req.periods
 
-            idx = pd.period_range(ts.index[-1] + pd.offsets.MonthBegin(1),
-                                  periods=req.periods, freq='M')  # ✅ ubah ke 'M'
+            idx = pd.date_range(ts.index[-1] + pd.offsets.MonthBegin(1),
+                                periods=req.periods, freq='MS')
 
-        results[menu] = {
+        results[menu_norm] = {
             'index': [d.strftime('%Y-%m-%d') for d in idx],
             'forecast': forecast_values
         }

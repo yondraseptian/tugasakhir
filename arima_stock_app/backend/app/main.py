@@ -1,177 +1,222 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
+from app.recipes import RECIPES, UNIT_CONVERSIONS
 import pandas as pd
-import io, os, json
+import io
+from fastapi.middleware.cors import CORSMiddleware
+
+app = FastAPI(title="Forecast & Ingredients Planner")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],   
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ARIMA
 try:
     import pmdarima as pm
-except Exception:
+except:
     pm = None
-from typing import List
 
-app = FastAPI(title='ARIMA Forecast & Ingredients Planner')
 
-# Simple in-memory store for uploaded/parsed sales
-STORE = {'sales_df': None, 'recipes': None, 'inventory': None}
 
-@app.post('/upload-sales')
+STORE = {"sales_df": None}
+
+
+# ========== UPLOAD SALES ==========
+@app.post("/upload-sales")
 async def upload_sales(file: UploadFile = File(...)):
-    import io
-    import pandas as pd
-
-    # --- Baca isi file CSV ---
     content = await file.read()
+
     try:
         df = pd.read_csv(io.BytesIO(content))
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f'Invalid CSV file: {e}')
+    except:
+        raise HTTPException(status_code=400, detail="Invalid CSV")
 
-    # --- Normalisasi nama kolom ---
     df.columns = [c.lower().strip() for c in df.columns]
-    df['menu'] = df['menu'].astype(str).str.strip().str.title()
 
-    # --- Validasi kolom wajib ---
-    expected_cols = ['sales_date', 'menu', 'qty']
-    for col in expected_cols:
+    required = ["sales_date", "menu", "qty"]
+    for col in required:
         if col not in df.columns:
-            raise HTTPException(
-                status_code=400,
-                detail=f'Missing required column: {col}'
-            )
+            raise HTTPException(400, f"Missing column: {col}")
 
-    # --- Konversi tanggal & qty ---
-    df['sales_date'] = pd.to_datetime(df['sales_date'], errors='coerce')
-    df = df.dropna(subset=['sales_date'])  # buang tanggal invalid
+    df["sales_date"] = pd.to_datetime(df["sales_date"], errors="coerce")
+    df = df.dropna(subset=["sales_date"])
+    df["qty"] = pd.to_numeric(df["qty"], errors="coerce").fillna(0).astype(int)
 
-    df['qty'] = pd.to_numeric(df['qty'], errors='coerce').fillna(0).astype(int)
+    df["month"] = df["sales_date"].dt.to_period("M").dt.to_timestamp()
 
-    # --- Ambil bulan dari tanggal ---
-    df['month'] = df['sales_date'].dt.to_period('M').dt.to_timestamp()
+    agg = df.groupby(["menu", "month"]).agg({"qty": "sum"}).reset_index()
 
-    # --- Agregasi total qty per menu per bulan ---
-    agg = df.groupby(['menu', 'month']).agg({'qty': 'sum'}).reset_index()
-
-    # --- Simpan ke memori sementara ---
-    STORE['sales_df'] = agg
+    STORE["sales_df"] = agg
 
     return {
-        'status': 'ok',
-        'records_loaded': len(df),
-        'menus_detected': agg['menu'].unique().tolist(),
-        'preview': agg.head(10).to_dict(orient='records')
+        "status": "ok",
+        "menus": agg["menu"].unique().tolist(),
+        "records": len(agg)
     }
 
-@app.get('/menus')
-def list_menus():
-    if STORE['sales_df'] is None:
-        raise HTTPException(status_code=404, detail='No sales uploaded')
-    df = STORE['sales_df']
-    rank = df.groupby('menu').agg({'qty':'sum'}).reset_index().sort_values('qty', ascending=False)
-    return {'menus': rank.to_dict(orient='records')}
 
+# ========== LIST MENUS ==========
+@app.get("/menus")
+def menus():
+    df = STORE["sales_df"]
+    rank = df.groupby("menu").qty.sum().reset_index()
+    return {"menus": rank.sort_values("qty", ascending=False).to_dict(orient="records")}
+
+
+# ========== FORECAST ==========
 class ForecastRequest(BaseModel):
-    menus: List[str]
+    menus: list
     periods: int = 12
-    freq: str = 'M'
 
-@app.post('/forecast')
+
+@app.post("/forecast")
 def forecast(req: ForecastRequest):
-    if STORE.get('sales_df') is None:
-        raise HTTPException(status_code=404, detail='No sales uploaded')
+    if STORE["sales_df"] is None:
+        raise HTTPException(404, "Upload sales first")
 
-    df = STORE['sales_df'].copy()
-    df['menu'] = df['menu'].astype(str).str.strip().str.title()  # pastikan bersih
-    df['month'] = pd.to_datetime(df['month'], errors='coerce')
-
+    df = STORE["sales_df"]
     results = {}
 
     for menu in req.menus:
-        # Normalisasi nama menu input juga
-        menu_norm = str(menu).strip().title()
+        ts = df[df["menu"] == menu].set_index("month")["qty"].sort_index()
+        ts.index = pd.to_datetime(ts.index)
 
-        # Filter data
-        ts = df[df['menu'] == menu_norm].set_index('month').sort_index()['qty']
+        if len(ts) < 3:
+            raise HTTPException(400, f"Too little data for {menu}")
 
-        if ts.empty:
-            raise HTTPException(status_code=400, detail=f"No valid data for menu '{menu}'")
+        def try_fit_seasonal(ts):
+            return pm.auto_arima(
+                ts,
+                seasonal=True,
+                m=12,
+                stepwise=True,
+                suppress_warnings=True,
+                error_action="ignore",
+            )
 
-        # Pastikan frekuensi bulanan
-        ts = ts.asfreq('MS').fillna(0)
+        def try_fit_nonseasonal(ts):
+            return pm.auto_arima(
+                ts,
+                seasonal=False,
+                stepwise=True,
+                suppress_warnings=True,
+                error_action="ignore",
+            )
 
-        # Fallback jika data < 6 titik
-        if len(ts.dropna()) < 6:
-            avg = ts.mean() if not pd.isna(ts.mean()) else 0
-            forecast_values = [int(round(avg))] * req.periods
-            idx = pd.date_range(ts.index[-1] + pd.offsets.MonthBegin(1),
-                                periods=req.periods, freq='MS')
+        model = None
+
+        # 1️⃣ Coba ARIMA seasonal
+        try:
+            model = try_fit_seasonal(ts)
+        except:
+            pass
+
+        # 2️⃣ Jika gagal, coba non-seasonal
+        if model is None:
+            try:
+                model = try_fit_nonseasonal(ts)
+            except:
+                pass
+
+        # 3️⃣ Jika dua-duanya gagal → fallback moving average
+        if model is None:
+            # moving average: lebih dinamis dibanding mean
+            window = min(len(ts), 3)
+            avg = int(ts.rolling(window).mean().iloc[-1])
+            forecast_values = [int(max(0, avg))] * req.periods
         else:
-            if pm is not None:
-                try:
-                    model = pm.auto_arima(
-                        ts,
-                        seasonal=False,
-                        m=12,
-                        error_action='ignore',
-                        suppress_warnings=True
-                    )
-                    f = model.predict(n_periods=req.periods)
-                    forecast_values = [int(max(0, round(x))) for x in f]
-                except Exception as e:
-                    avg = ts.mean()
-                    forecast_values = [int(round(avg))] * req.periods
-            else:
-                last_mean = ts.rolling(3, min_periods=1).mean().iloc[-1]
-                forecast_values = [int(round(last_mean))] * req.periods
+            f = model.predict(req.periods)
+            forecast_values = [int(max(0, round(x))) for x in f]
 
-            idx = pd.date_range(ts.index[-1] + pd.offsets.MonthBegin(1),
-                                periods=req.periods, freq='MS')
+        # forecast index
+        start = ts.index[-1] + pd.offsets.MonthBegin(1)
+        idx = pd.date_range(start=start, periods=req.periods, freq="MS")
 
-        results[menu_norm] = {
-            'index': [d.strftime('%Y-%m-%d') for d in idx],
-            'forecast': forecast_values
+        results[menu] = {
+            "index": [x.strftime("%Y-%m-%d") for x in idx],
+            "forecast": forecast_values,
         }
 
-    return {'status': 'ok', 'forecasts': results}
+    STORE["forecasts"] = results
+    return {"status": "ok", "forecasts": results}
 
-@app.get("/debug-sales")
-def debug_sales():
-    if STORE.get("sales_df") is None:
-        return {"detail": "No sales uploaded"}
-    df = STORE["sales_df"]
-    return df.to_dict(orient="records")
 
-@app.post('/convert-to-ingredients')
-def convert_to_ingredients(payload: dict):
-    # payload expects {'forecasts': {...}, 'recipes': {...}}
-    forecasts = payload.get('forecasts')
-    recipes = payload.get('recipes') or STORE.get('recipes')
-    if forecasts is None or recipes is None:
-        raise HTTPException(status_code=400, detail='Provide forecasts and recipes (or upload recipes first)')
+# ========== EXPAND NESTED RECIPE ==========
+def expand_recipe(item, qty, unit, result):
+    # Jika item adalah bahan mentah
+    if item not in RECIPES:
+        if item not in result:
+            result[item] = {"qty": 0, "unit": unit}
+
+        result[item]["qty"] += qty
+        return
+
+    # Jika item adalah recipe → pecah lagi
+    for sub in RECIPES[item]:
+        ingredient = sub["ingredient"]
+        qty_per_unit = sub["qty_per_unit"]
+        sub_unit = sub.get("unit", "pcs")
+
+        total_qty = qty_per_unit * qty
+        expand_recipe(ingredient, total_qty, sub_unit, result)
+
+
+# ========== CALCULATE STOCK NEED ==========
+@app.post("/calculate-stock")
+def calculate_stock():
+    forecasts = STORE.get("forecasts")
+
+    if forecasts is None:
+        raise HTTPException(400, "No forecast found. Calculate forecast first.")
+
     rows = []
-    for menu, data in forecasts.items():
-        for date_str, units in zip(data['index'], data['forecast']):
-            rec = recipes.get(menu, [])
-            for r in rec:
-                rows.append({'month': date_str, 'menu': menu, 'ingredient': r['ingredient'], 'qty_needed': units * r['qty_per_unit'], 'unit': r.get('unit','unit')})
+
+    for menu, fdata in forecasts.items():
+        for date, units in zip(fdata["index"], fdata["forecast"]):
+            expanded = {}
+            expand_recipe(menu, units, "pcs", expanded)
+
+            for ingredient, data in expanded.items():
+                qty = data["qty"]
+                unit = data["unit"].lower()
+
+                if unit not in UNIT_CONVERSIONS:
+                    raise HTTPException(400, f"Unknown unit: {unit}")
+
+                final_unit, factor = UNIT_CONVERSIONS[unit]
+                final_qty = qty * factor
+
+                rows.append({
+                    "month": date,
+                    "menu": menu,
+                    "ingredient": ingredient,
+
+                    "raw_qty": qty,
+                    "raw_unit": unit,
+
+                    "final_qty": round(final_qty, 4),
+                    "final_unit": final_unit
+                })
+
     df = pd.DataFrame(rows)
-    if df.empty:
-        return {'ingredients': []}
-    out = df.groupby(['month','ingredient','unit']).agg({'qty_needed':'sum'}).reset_index()
-    return {'ingredients': out.to_dict(orient='records')}
 
-@app.post('/upload-recipes')
-async def upload_recipes(file: UploadFile = File(...)):
-    content = await file.read()
-    try:
-        data = json.loads(content.decode()) if isinstance(content, (bytes,bytearray)) else file.file.read()
-        STORE['recipes'] = data
-        return {'status':'ok','recipes_count': len(data)}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f'invalid json: {e}')
+    # ✅ DIGABUNG TOTAL PER BULAN + INGREDIENT
+    df = df.groupby(
+        ["month", "ingredient", "final_unit"],
+        as_index=False
+    ).agg({
+        "raw_qty": "sum",
+        "final_qty": "sum",
+        "menu": lambda x: ", ".join(sorted(set(x)))
+    })
 
-@app.get('/sample-download')
-def sample_download():
-    path = os.path.join(os.path.dirname(__file__), '..', '..', 'sample_data', 'sample_sales_2024.csv')
-    if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail='sample not found')
-    return FileResponse(path, media_type='text/csv', filename='sample_sales_2024.csv')
+    STORE["ingredients"] = df.to_dict(orient="records")
+
+    return {
+        "status": "ok",
+        "ingredients": df.to_dict(orient="records")
+    }

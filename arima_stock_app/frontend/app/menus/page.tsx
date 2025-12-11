@@ -24,6 +24,7 @@ export default function MenusPage() {
   const router = useRouter();
   const [menus, setMenus] = useState<Menu[]>([]);
   const [selectedMenus, setSelectedMenus] = useState<Set<string>>(new Set());
+  const [periods, setPeriods] = useState(12);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -79,6 +80,7 @@ export default function MenusPage() {
         "selectedMenus",
         JSON.stringify(Array.from(selectedMenus))
       );
+       sessionStorage.setItem("periods", JSON.stringify(periods))
 
       router.push("/forecast");
     } catch (error) {
@@ -100,16 +102,11 @@ export default function MenusPage() {
     <main className="min-h-screen bg-background p-6">
       <div className="max-w-4xl mx-auto">
         <div className="mb-8">
-          <Link
-            href="/upload"
-            className="text-primary hover:underline text-sm mb-4 inline-block"
-          >
+          <Link href="/upload" className="text-primary hover:underline text-sm mb-4 inline-block">
             ← Back to Upload
           </Link>
           <h1 className="text-3xl font-bold mb-2">Select Menus</h1>
-          <p className="text-muted-foreground">
-            Step 2 of 4: Choose which items to forecast
-          </p>
+          <p className="text-muted-foreground">Step 2 of 4: Choose which items to forecast</p>
         </div>
 
         {error && (
@@ -122,9 +119,7 @@ export default function MenusPage() {
         {menus.length === 0 ? (
           <Alert>
             <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              No menus found in your data. Please upload data first.
-            </AlertDescription>
+            <AlertDescription>No menus found in your data. Please upload data first.</AlertDescription>
           </Alert>
         ) : (
           <>
@@ -133,9 +128,7 @@ export default function MenusPage() {
                 <Card
                   key={menu.menu}
                   className={`cursor-pointer transition-all ${
-                    selectedMenus.has(menu.menu)
-                      ? "border-primary border-2 bg-primary/5"
-                      : ""
+                    selectedMenus.has(menu.menu) ? "border-primary border-2 bg-primary/5" : ""
                   }`}
                   onClick={() => toggleMenu(menu.menu)}
                 >
@@ -149,10 +142,7 @@ export default function MenusPage() {
                       <div className="flex-1">
                         <CardTitle className="text-lg">{menu.menu}</CardTitle>
                         <CardDescription>
-                          Total orders:{" "}
-                          <span className="font-semibold text-foreground">
-                            {menu.qty}
-                          </span>
+                          Total orders: <span className="font-semibold text-foreground">{menu.qty}</span>
                         </CardDescription>
                       </div>
                     </div>
@@ -161,12 +151,31 @@ export default function MenusPage() {
               ))}
             </div>
 
+            <Card className="mb-8 bg-muted/50">
+              <CardHeader>
+                <CardTitle className="text-lg">Forecast Period</CardTitle>
+                <CardDescription>Select how many months ahead to forecast</CardDescription>
+              </CardHeader>
+              <div className="px-6 pb-6">
+                <div className="flex flex-wrap gap-2">
+                  {[3, 6, 12, 24].map((month) => (
+                    <Button
+                      key={month}
+                      variant={periods === month ? "default" : "outline"}
+                      onClick={() => setPeriods(month)}
+                      className="min-w-[100px]"
+                    >
+                      {month} Months
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            </Card>
+
             {selectedMenus.size === 0 && (
               <Alert>
                 <AlertCircle className="h-4 w-4" />
-                <AlertDescription>
-                  Please select at least one menu to continue
-                </AlertDescription>
+                <AlertDescription>Please select at least one menu to continue</AlertDescription>
               </Alert>
             )}
 
@@ -174,12 +183,7 @@ export default function MenusPage() {
               <Button asChild variant="outline">
                 <Link href="/upload">Back</Link>
               </Button>
-              <Button
-                onClick={handleForecast}
-                size="lg"
-                disabled={selectedMenus.size === 0}
-                className="ml-auto"
-              >
+              <Button onClick={handleForecast} size="lg" disabled={selectedMenus.size === 0} className="ml-auto">
                 Generate Forecast <ChevronRight className="w-4 h-4 ml-2" />
               </Button>
             </div>
@@ -187,5 +191,5 @@ export default function MenusPage() {
         )}
       </div>
     </main>
-  );
+  )
 }

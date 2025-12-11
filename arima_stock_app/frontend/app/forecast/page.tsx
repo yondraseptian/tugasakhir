@@ -32,12 +32,14 @@ useEffect(() => {
         return
       }
 
+      const storedPeriods = Number(sessionStorage.getItem("periods") || "12")
+
       const response = await fetch(apiEndpoints.forecast, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           menus: JSON.parse(selectedMenus),
-          periods: 12,
+          periods: storedPeriods,
         }),
       })
 

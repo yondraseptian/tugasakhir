@@ -13,8 +13,8 @@ interface Ingredient {
   month: string
   ingredient: string
   menu: string
-  final_qty: number
-  final_unit?: string
+  qty: number
+  unit?: string
 }
 
 export default function IngredientsPage() {
@@ -65,7 +65,7 @@ export default function IngredientsPage() {
     const csv = [
       ["Month", "Ingredient", "Menu", "Quantity Needed", "Unit"].join(","),
       ...filteredIngredients.map((ing) =>
-        [ing.month, ing.ingredient, ing.menu, ing.final_qty, ing.final_unit || ""].join(","),
+        [ing.month, ing.ingredient, ing.menu, ing.qty, ing.unit || ""].join(","),
       ),
     ].join("\n")
 
@@ -180,12 +180,12 @@ export default function IngredientsPage() {
                         <td className="py-3 px-4 font-medium">{ing.ingredient}</td>
                         <td className="py-3 px-4 text-muted-foreground">{ing.menu}</td>
                         <td className="py-3 px-4 text-right font-semibold text-primary">
-                          {ing.final_qty.toLocaleString("id-ID", {
+                          {ing.qty.toLocaleString("id-ID", {
                             minimumFractionDigits: 0,
                             maximumFractionDigits: 2,
                           })}
                         </td>
-                        <td className="py-3 px-4 text-muted-foreground">{ing.final_unit || "-"}</td>
+                        <td className="py-3 px-4 text-muted-foreground">{ing.unit || "-"}</td>
                       </tr>
                     ))}
                 </tbody>

@@ -1,6 +1,9 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
+from sqlalchemy.orm import Session
+from app.dependencies.db import get_db
+from app.utils.recipe import expand_recipe_db
 from pydantic import BaseModel
-from app.recipes import RECIPES, UNIT_CONVERSIONS
+from app.recipes import  UNIT_CONVERSIONS
 import pandas as pd
 import io
 from fastapi.middleware.cors import CORSMiddleware
@@ -109,30 +112,44 @@ def forecast(req: ForecastRequest):
 
         model = None
 
-        # 1️⃣ Coba ARIMA seasonal
+        # 1️⃣ coba seasonal
         try:
             model = try_fit_seasonal(ts)
         except:
             pass
 
-        # 2️⃣ Jika gagal, coba non-seasonal
+        # 2️⃣ fallback non-seasonal
         if model is None:
             try:
                 model = try_fit_nonseasonal(ts)
             except:
                 pass
 
-        # 3️⃣ Jika dua-duanya gagal → fallback moving average
+        # 3️⃣ fallback terakhir → moving average
         if model is None:
-            # moving average: lebih dinamis dibanding mean
             window = min(len(ts), 3)
             avg = int(ts.rolling(window).mean().iloc[-1])
             forecast_values = [int(max(0, avg))] * req.periods
+
+            # 🔴 PRINT KE TERMINAL
+            print("=" * 50)
+            print(f"MENU  : {menu}")
+            print("MODEL : MOVING AVERAGE (fallback)")
+            print("=" * 50)
+
         else:
             f = model.predict(req.periods)
             forecast_values = [int(max(0, round(x))) for x in f]
 
-        # forecast index
+            # 🟢 PRINT ARIMA PARAMETER
+            print("=" * 50)
+            print(f"MENU           : {menu}")
+            print(f"ARIMA (p,d,q)  : {model.order}")
+            print(f"SEASONAL      : {model.seasonal_order}")
+            print(f"AIC           : {model.aic()}")
+            print("=" * 50)
+
+        # index forecast
         start = ts.index[-1] + pd.offsets.MonthBegin(1)
         idx = pd.date_range(start=start, periods=req.periods, freq="MS")
 
@@ -145,78 +162,37 @@ def forecast(req: ForecastRequest):
     return {"status": "ok", "forecasts": results}
 
 
-# ========== EXPAND NESTED RECIPE ==========
-def expand_recipe(item, qty, unit, result):
-    # Jika item adalah bahan mentah
-    if item not in RECIPES:
-        if item not in result:
-            result[item] = {"qty": 0, "unit": unit}
-
-        result[item]["qty"] += qty
-        return
-
-    # Jika item adalah recipe → pecah lagi
-    for sub in RECIPES[item]:
-        ingredient = sub["ingredient"]
-        qty_per_unit = sub["qty_per_unit"]
-        sub_unit = sub.get("unit", "pcs")
-
-        total_qty = qty_per_unit * qty
-        expand_recipe(ingredient, total_qty, sub_unit, result)
-
-
 # ========== CALCULATE STOCK NEED ==========
 @app.post("/calculate-stock")
-def calculate_stock():
+def calculate_stock_db(db: Session = Depends(get_db)):
     forecasts = STORE.get("forecasts")
-
-    if forecasts is None:
-        raise HTTPException(400, "No forecast found. Calculate forecast first.")
+    if not forecasts:
+        raise HTTPException(400, "No forecast found.")
 
     rows = []
 
-    for menu, fdata in forecasts.items():
+    for menu_name, fdata in forecasts.items():
         for date, units in zip(fdata["index"], fdata["forecast"]):
             expanded = {}
-            expand_recipe(menu, units, "pcs", expanded)
+            expand_recipe_db(db, menu_name, units, expanded)
 
-            for ingredient, data in expanded.items():
-                qty = data["qty"]
-                unit = data["unit"].lower()
-
-                if unit not in UNIT_CONVERSIONS:
-                    raise HTTPException(400, f"Unknown unit: {unit}")
-
-                final_unit, factor = UNIT_CONVERSIONS[unit]
-                final_qty = qty * factor
-
+            for ing, data in expanded.items():
                 rows.append({
                     "month": date,
-                    "menu": menu,
-                    "ingredient": ingredient,
-
-                    "raw_qty": qty,
-                    "raw_unit": unit,
-
-                    "final_qty": round(final_qty, 4),
-                    "final_unit": final_unit
+                    "menu": menu_name,
+                    "ingredient": ing,
+                    "qty": round(data["qty"], 4),
+                    "unit": data["unit"]
                 })
 
     df = pd.DataFrame(rows)
 
-    # ✅ DIGABUNG TOTAL PER BULAN + INGREDIENT
-    df = df.groupby(
-        ["month", "ingredient", "final_unit"],
-        as_index=False
-    ).agg({
-        "raw_qty": "sum",
-        "final_qty": "sum",
+    # Aggregrate per bulan & ingredient
+    df = df.groupby(["month", "ingredient", "unit"], as_index=False).agg({
+        "qty": "sum",
         "menu": lambda x: ", ".join(sorted(set(x)))
     })
 
     STORE["ingredients"] = df.to_dict(orient="records")
 
-    return {
-        "status": "ok",
-        "ingredients": df.to_dict(orient="records")
-    }
+    return {"status": "ok", "ingredients": df.to_dict(orient="records")}

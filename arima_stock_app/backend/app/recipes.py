@@ -53,7 +53,6 @@ RECIPES = {
         {"ingredient": "Air Panas", "qty_per_unit": 600, "unit": "ml"},
     ],
 
-    # ✅ BASE YANG TADI HILANG
     "Blend B Espresso": [
         {"ingredient": "Coffee Blend O", "qty_per_unit": 20, "unit": "g"},
     ],

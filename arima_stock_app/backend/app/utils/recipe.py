@@ -6,14 +6,14 @@ from app.recipes import UNIT_CONVERSIONS
 def expand_recipe_db(db: Session, recipe_name: str, qty: float, result: dict):
     recipe = db.query(Recipe).filter_by(name=recipe_name).first()
 
-    # Base ingredient
+    # 🚨 Recipe tidak ada di DB
     if not recipe:
-        if recipe_name not in result:
-            result[recipe_name] = {"qty": 0, "unit": "pcs"}
-        result[recipe_name]["qty"] += qty
-        return
+        raise ValueError(f"RECIPE_NOT_FOUND:{recipe_name}")
 
-    # qty = kebutuhan recipe ini (misal 30 ml)
+    # 🚨 Recipe ada tapi tidak punya items (belum di-setup)
+    if not recipe.items or len(recipe.items) == 0:
+        raise ValueError(f"RECIPE_EMPTY:{recipe_name}")
+
     scale = qty / recipe.yield_qty
 
     for item in recipe.items:
@@ -22,7 +22,6 @@ def expand_recipe_db(db: Session, recipe_name: str, qty: float, result: dict):
             ing_unit = item.unit
 
             used_qty = item.qty_per_unit * scale
-
             final_unit, factor = UNIT_CONVERSIONS.get(ing_unit, (ing_unit, 1))
             used_qty *= factor
 

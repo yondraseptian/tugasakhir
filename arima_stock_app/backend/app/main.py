@@ -7,8 +7,11 @@ from app.recipes import  UNIT_CONVERSIONS
 import pandas as pd
 import io
 from fastapi.middleware.cors import CORSMiddleware
+from app.router.recipes import router as recipe_router
 
-app = FastAPI(title="Forecast & Ingredients Planner")
+
+app = FastAPI(title="Forecast & Ingredients Planner")   
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],   
@@ -16,6 +19,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(recipe_router, prefix="/recipes", tags=["Recipes"])
+
 
 # ARIMA
 try:
@@ -170,11 +176,23 @@ def calculate_stock_db(db: Session = Depends(get_db)):
         raise HTTPException(400, "No forecast found.")
 
     rows = []
+    no_recipe_menus = set()
+    empty_recipe_menus = set()
 
     for menu_name, fdata in forecasts.items():
         for date, units in zip(fdata["index"], fdata["forecast"]):
             expanded = {}
-            expand_recipe_db(db, menu_name, units, expanded)
+
+            try:
+                expand_recipe_db(db, menu_name, units, expanded)
+
+            except ValueError as e:
+                code, menu = str(e).split(":")
+                if code == "RECIPE_NOT_FOUND":
+                    no_recipe_menus.add(menu)
+                elif code == "RECIPE_EMPTY":
+                    empty_recipe_menus.add(menu)
+                continue
 
             for ing, data in expanded.items():
                 rows.append({
@@ -185,9 +203,19 @@ def calculate_stock_db(db: Session = Depends(get_db)):
                     "unit": data["unit"]
                 })
 
+    if no_recipe_menus or empty_recipe_menus:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "RECIPE_MISSING",
+                "message": "Data resep minuman tidak valid",
+                "noRecipeMenus": list(no_recipe_menus),
+                "emptyRecipeMenus": list(empty_recipe_menus),
+            }
+        )
+
     df = pd.DataFrame(rows)
 
-    # Aggregrate per bulan & ingredient
     df = df.groupby(["month", "ingredient", "unit"], as_index=False).agg({
         "qty": "sum",
         "menu": lambda x: ", ".join(sorted(set(x)))
@@ -195,4 +223,4 @@ def calculate_stock_db(db: Session = Depends(get_db)):
 
     STORE["ingredients"] = df.to_dict(orient="records")
 
-    return {"status": "ok", "ingredients": df.to_dict(orient="records")}
+    return {"status": "ok", "ingredients": STORE["ingredients"]}

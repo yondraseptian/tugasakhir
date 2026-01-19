@@ -1,28 +1,38 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import Link from "next/link"
-import { useRouter } from "next/navigation"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { AlertCircle, Download } from "lucide-react"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { apiEndpoints } from "@/lib/api-config"
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { AlertCircle, AlertTriangle, Download } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { apiEndpoints } from "@/lib/api-config";
+import { RecipeMissingPage } from "@/components/recipe-missing-alert";
 
 interface Ingredient {
-  month: string
-  ingredient: string
-  menu: string
-  qty: number
-  unit?: string
+  month: string;
+  ingredient: string;
+  menu: string;
+  qty: number;
+  unit?: string;
 }
 
 export default function IngredientsPage() {
-  const router = useRouter()
-  const [ingredients, setIngredients] = useState<Ingredient[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState("")
-  const [selectedMonth, setSelectedMonth] = useState<string>("")
+  const router = useRouter();
+  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [selectedMonth, setSelectedMonth] = useState<string>("");
+  const [showRecipeMissingAlert, setShowRecipeMissingAlert] = useState(false);
+  const [noRecipeMenus, setNoRecipeMenus] = useState<string[]>([]);
+  const [emptyRecipeMenus, setEmptyRecipeMenus] = useState<string[]>([]);
 
   useEffect(() => {
     const loadIngredients = async () => {
@@ -32,50 +42,66 @@ export default function IngredientsPage() {
           headers: {
             "Content-Type": "application/json",
           },
-        })
+        });
 
-        if (!response.ok) {
-          throw new Error("Failed to fetch ingredients from backend")
+        if (response.status === 409) {
+          const errorData = await response.json();
+
+          if (errorData?.detail?.code === "RECIPE_MISSING") {
+            setNoRecipeMenus(errorData.detail.noRecipeMenus || []);
+            setEmptyRecipeMenus(errorData.detail.emptyRecipeMenus || []);
+            setShowRecipeMissingAlert(true);
+            setIsLoading(false);
+            return;
+          }
         }
 
-        const result = await response.json()
-        const ingredientData = result.ingredients || []
+        const result = await response.json();
+        const ingredientData = result.ingredients || [];
 
-        setIngredients(ingredientData)
+        setIngredients(ingredientData);
         if (ingredientData.length > 0) {
-          const months = Array.from(new Set(ingredientData.map((ing: any) => ing.month))).sort()
-          setSelectedMonth(months[0])
+          const months = Array.from(
+            new Set(ingredientData.map((ing: any) => ing.month))
+          ).sort();
+          setSelectedMonth(months[0]);
         }
-        setIsLoading(false)
+        setIsLoading(false);
       } catch (err) {
-        console.error("Error loading ingredients:", err)
-        setError(err instanceof Error ? err.message : "Failed to fetch ingredients")
-        setIsLoading(false)
+        console.error("Error loading ingredients:", err);
+        setError(
+          err instanceof Error ? err.message : "Failed to fetch ingredients"
+        );
+        setIsLoading(false);
       }
-    }
+    };
 
-    loadIngredients()
-  }, [router])
+    loadIngredients();
+  }, [router]);
 
-  const filteredIngredients = selectedMonth ? ingredients.filter((ing) => ing.month === selectedMonth) : ingredients
+  const filteredIngredients = selectedMonth
+    ? ingredients.filter((ing) => ing.month === selectedMonth)
+    : ingredients;
 
-  const months = Array.from(new Set(ingredients.map((ing) => ing.month))).sort()
+  const months = Array.from(
+    new Set(ingredients.map((ing) => ing.month))
+  ).sort();
 
   const handleExportCSV = () => {
     const csv = [
       ["Month", "Ingredient", "Menu", "Quantity Needed", "Unit"].join(","),
       ...filteredIngredients.map((ing) =>
-        [ing.month, ing.ingredient, ing.menu, ing.qty, ing.unit || ""].join(","),
+        [ing.month, ing.ingredient, ing.menu, ing.qty, ing.unit || ""].join(",")
       ),
-    ].join("\n")
+    ].join("\n");
 
-    const blob = new Blob([csv], { type: "text/csv" })
-    const url = window.URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `ingredients-${selectedMonth || "all"}.csv`
-    a.click()
-  }
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ingredients-${selectedMonth || "all"}.csv`;
+    a.click();
+  };
 
   if (isLoading) {
     return (
@@ -84,7 +110,11 @@ export default function IngredientsPage() {
           <p>Loading ingredient requirements...</p>
         </div>
       </main>
-    )
+    );
+  }
+
+   if (showRecipeMissingAlert) {
+    return <RecipeMissingPage noRecipeMenus={noRecipeMenus} emptyRecipeMenus={emptyRecipeMenus} />
   }
 
   if (error) {
@@ -97,7 +127,7 @@ export default function IngredientsPage() {
           </Alert>
         </div>
       </main>
-    )
+    );
   }
 
   if (!ingredients.length) {
@@ -106,22 +136,29 @@ export default function IngredientsPage() {
         <div className="max-w-6xl mx-auto">
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
-            <AlertDescription>No ingredient data available from backend.</AlertDescription>
+            <AlertDescription>
+              No ingredient data available from backend.
+            </AlertDescription>
           </Alert>
         </div>
       </main>
-    )
+    );
   }
 
   return (
     <main className="min-h-screen bg-background p-6">
       <div className="max-w-6xl mx-auto">
         <div className="mb-8">
-          <Link href="/" className="text-primary hover:underline text-sm mb-4 inline-block">
+          <Link
+            href="/"
+            className="text-primary hover:underline text-sm mb-4 inline-block"
+          >
             ← Back to Home
           </Link>
           <h1 className="text-3xl font-bold mb-2">Ingredient Requirements</h1>
-          <p className="text-muted-foreground">View ingredient needs calculated by backend</p>
+          <p className="text-muted-foreground">
+            View ingredient needs calculated by backend
+          </p>
         </div>
 
         <Card className="mb-8">
@@ -140,7 +177,10 @@ export default function IngredientsPage() {
                       : "bg-muted text-muted-foreground hover:bg-muted/80"
                   }`}
                 >
-                  {new Date(month).toLocaleDateString("id-ID", { year: "numeric", month: "long" })}
+                  {new Date(month).toLocaleDateString("id-ID", {
+                    year: "numeric",
+                    month: "long",
+                  })}
                 </button>
               ))}
             </div>
@@ -152,9 +192,14 @@ export default function IngredientsPage() {
             <div>
               <CardTitle>
                 Ingredient Requirements for{" "}
-                {new Date(selectedMonth).toLocaleDateString("id-ID", { year: "numeric", month: "long" })}
+                {new Date(selectedMonth).toLocaleDateString("id-ID", {
+                  year: "numeric",
+                  month: "long",
+                })}
               </CardTitle>
-              <CardDescription>All ingredients needed for selected period</CardDescription>
+              <CardDescription>
+                All ingredients needed for selected period
+              </CardDescription>
             </div>
             <Button onClick={handleExportCSV} variant="outline" size="sm">
               <Download className="w-4 h-4 mr-2" />
@@ -166,9 +211,13 @@ export default function IngredientsPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b">
-                    <th className="text-left py-3 px-4 font-semibold">Ingredient</th>
+                    <th className="text-left py-3 px-4 font-semibold">
+                      Ingredient
+                    </th>
                     <th className="text-left py-3 px-4 font-semibold">Menu</th>
-                    <th className="text-right py-3 px-4 font-semibold">Quantity Needed</th>
+                    <th className="text-right py-3 px-4 font-semibold">
+                      Quantity Needed
+                    </th>
                     <th className="text-left py-3 px-4 font-semibold">Unit</th>
                   </tr>
                 </thead>
@@ -177,15 +226,21 @@ export default function IngredientsPage() {
                     .sort((a, b) => a.ingredient.localeCompare(b.ingredient))
                     .map((ing, idx) => (
                       <tr key={idx} className="border-b hover:bg-muted/50">
-                        <td className="py-3 px-4 font-medium">{ing.ingredient}</td>
-                        <td className="py-3 px-4 text-muted-foreground">{ing.menu}</td>
+                        <td className="py-3 px-4 font-medium">
+                          {ing.ingredient}
+                        </td>
+                        <td className="py-3 px-4 text-muted-foreground">
+                          {ing.menu}
+                        </td>
                         <td className="py-3 px-4 text-right font-semibold text-primary">
                           {ing.qty.toLocaleString("id-ID", {
                             minimumFractionDigits: 0,
                             maximumFractionDigits: 2,
                           })}
                         </td>
-                        <td className="py-3 px-4 text-muted-foreground">{ing.unit || "-"}</td>
+                        <td className="py-3 px-4 text-muted-foreground">
+                          {ing.unit || "-"}
+                        </td>
                       </tr>
                     ))}
                 </tbody>
@@ -201,5 +256,5 @@ export default function IngredientsPage() {
         </div>
       </div>
     </main>
-  )
+  );
 }

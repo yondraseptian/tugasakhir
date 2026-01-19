@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { BarChart3, TrendingUp, UtensilsCrossed, Upload } from "lucide-react"
+import { BarChart3, TrendingUp, UtensilsCrossed, Upload, BookOpen } from "lucide-react"
 
 export default function Home() {
   const steps = [
@@ -33,6 +33,13 @@ export default function Home() {
       description: "Calculate ingredient requirements",
       href: "/ingredients",
       color: "text-green-600",
+    },
+    {
+      icon: BookOpen,
+      title: "Manage Recipes",
+      description: "Create and configure menu recipes with ingredients",
+      href: "/recipes",
+      color: "text-red-600",
     },
   ]
 

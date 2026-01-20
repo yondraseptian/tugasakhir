@@ -39,9 +39,23 @@ def list_recipes(db: Session = Depends(get_db),
                 {
                     "id": i.id,
                     "type": i.item_type.value,
+
+                    # ingredient
                     "ingredient_id": i.ingredient_id,
-                    "ingredient_name": i.ingredient.name if i.item_type == RecipeItemType.ingredient else None,
+                    "ingredient_name": (
+                        i.ingredient.name
+                        if i.item_type == RecipeItemType.ingredient
+                        else None
+                    ),
+
+                    # sub recipe
                     "sub_recipe_id": i.sub_recipe_id,
+                    "sub_recipe_name": (
+                        i.sub_recipe.name
+                        if i.item_type == RecipeItemType.recipe
+                        else None
+                    ),
+
                     "qty": i.qty_per_unit,
                     "unit": i.unit,
                 }
@@ -147,6 +161,28 @@ def add_recipe_item(
         "unit": item.unit
     }
 
+@router.get("/ingredients")
+def list_ingredients(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    ingredients = (
+        db.query(Ingredient)
+        .filter(Ingredient.user_id == current_user.id)
+        .order_by(Ingredient.name)
+        .all()
+    )
+
+    return [
+        {
+            "id": i.id,
+            "name": i.name,
+            "default_unit": i.default_unit
+        }
+        for i in ingredients
+    ]
+
+
 @router.get("/{recipe_id}")
 def get_recipe(recipe_id: int, db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
     recipe = db.query(Recipe).filter_by(id=recipe_id, user_id=current_user.id).first()
@@ -199,4 +235,36 @@ def create_ingredient(
         "id": ingredient.id,
         "name": ingredient.name,
         "default_unit": ingredient.default_unit
+    }
+
+@router.delete("/items/{item_id}")
+def delete_recipe_item(
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # ambil recipe item
+    item = db.query(RecipeItem).filter_by(id=item_id).first()
+    if not item:
+        raise HTTPException(404, "Recipe item not found")
+
+    # pastikan recipe milik user
+    recipe = (
+        db.query(Recipe)
+        .filter(
+            Recipe.id == item.recipe_id,
+            Recipe.user_id == current_user.id
+        )
+        .first()
+    )
+
+    if not recipe:
+        raise HTTPException(403, "You are not allowed to delete this item")
+
+    db.delete(item)
+    db.commit()
+
+    return {
+        "message": "Recipe item deleted successfully",
+        "item_id": item_id
     }

@@ -2,6 +2,8 @@ from app.db.session import SessionLocal
 from app.db.models import Ingredient, Recipe, RecipeItem
 from app.db.models.recipe import RecipeType
 from app.db.models.recipe_item import RecipeItemType
+from app.db.models import User
+from passlib.hash import bcrypt
 from app.recipes import RECIPES
 
 
@@ -30,6 +32,20 @@ def seed_recipes():
     db = SessionLocal()
 
     try:
+         # =========================
+        # 0️⃣ Insert Default User
+        # =========================
+        user = db.query(User).filter_by(name="admin").first()
+        if not user:
+            user = User(
+                name="admin",
+                email="admin@localhost",
+                password=bcrypt.hash("admin123")
+            )
+            db.add(user)
+            db.flush()
+
+        user_id = user.id
         
         # =========================
         # 1️⃣ Kumpulkan nama recipe & ingredient
@@ -49,7 +65,7 @@ def seed_recipes():
         for name in ingredient_names:
             ing = db.query(Ingredient).filter_by(name=name).first()
             if not ing:
-                ing = Ingredient(name=name, default_unit="pcs")
+                ing = Ingredient(name=name, default_unit="pcs", user_id=user_id)
                 db.add(ing)
                 db.flush()
             ingredient_map[name] = ing
@@ -80,7 +96,8 @@ def seed_recipes():
                     name=recipe_name,
                     type=recipe_type,
                     yield_qty=yield_qty,
-                    yield_unit=yield_unit
+                    yield_unit=yield_unit,
+                    user_id=user_id
                 )
                 db.add(recipe)
                 db.flush()

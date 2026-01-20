@@ -8,6 +8,7 @@ import pandas as pd
 import io
 from fastapi.middleware.cors import CORSMiddleware
 from app.router.recipes import router as recipe_router
+from app.router.auth_routes import router as auth_router
 
 
 app = FastAPI(title="Forecast & Ingredients Planner")   
@@ -20,7 +21,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router)
 app.include_router(recipe_router, prefix="/recipes", tags=["Recipes"])
+
 
 
 # ARIMA
@@ -30,9 +33,7 @@ except:
     pm = None
 
 
-
 STORE = {"sales_df": None}
-
 
 # ========== UPLOAD SALES ==========
 @app.post("/upload-sales")

@@ -14,13 +14,14 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ChevronRight, AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { apiEndpoints } from "@/lib/api-config";
+import { withProtectedRoute } from "@/components/protected-auth";
 
 interface Menu {
   menu: string;
   qty: number;
 }
 
-export default function MenusPage() {
+function MenusPage() {
   const router = useRouter();
   const [menus, setMenus] = useState<Menu[]>([]);
   const [selectedMenus, setSelectedMenus] = useState<Set<string>>(new Set());
@@ -193,3 +194,5 @@ export default function MenusPage() {
     </main>
   )
 }
+
+export default withProtectedRoute(MenusPage)

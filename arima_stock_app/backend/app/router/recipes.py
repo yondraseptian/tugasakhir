@@ -8,15 +8,18 @@ from app.db.models.recipe import RecipeType
 from app.schema.recipe import RecipeCreate, RecipeItemCreate
 from sqlalchemy.orm import joinedload
 from app.schema.ingredient import IngredientCreate
+from app.dependencies.auth import get_current_user
+from app.db.models.users import User
 
 
 router = APIRouter()
 
 
 @router.get("/")
-def list_recipes(db: Session = Depends(get_db)):
+def list_recipes(db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)):
     recipes = (
-    db.query(Recipe)
+    db.query(Recipe).filter_by(user_id=current_user.id)
     .options(
         joinedload(Recipe.items)
         .joinedload(RecipeItem.ingredient)
@@ -50,8 +53,11 @@ def list_recipes(db: Session = Depends(get_db)):
 
 
 @router.post("/")
-def create_recipe(payload: RecipeCreate, db: Session = Depends(get_db)):
-    exists = db.query(Recipe).filter_by(name=payload.name).first()
+def create_recipe(payload: RecipeCreate, db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
+    exists = db.query(Recipe).filter_by(
+    name=payload.name.strip(),
+    user_id=current_user.id
+).first()
     if exists:
         raise HTTPException(400, "Recipe already exists")
 
@@ -63,7 +69,8 @@ def create_recipe(payload: RecipeCreate, db: Session = Depends(get_db)):
         name=payload.name,
         type=RecipeType[payload.type],
         yield_qty=payload.yield_qty,
-        yield_unit=payload.yield_unit
+        yield_unit=payload.yield_unit,
+        user_id=current_user.id
     )
 
     db.add(recipe)
@@ -83,9 +90,10 @@ def create_recipe(payload: RecipeCreate, db: Session = Depends(get_db)):
 def add_recipe_item(
     recipe_id: int,
     payload: RecipeItemCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user : User = Depends(get_current_user)
 ):
-    recipe = db.query(Recipe).get(recipe_id)
+    recipe = db.query(Recipe).filter_by(id=recipe_id, user_id=current_user.id).first()
     if not recipe:
         raise HTTPException(404, "Recipe not found")
 
@@ -96,7 +104,7 @@ def add_recipe_item(
 
         ingredient = db.query(Ingredient).get(payload.ingredient_id)
         if not ingredient:
-            raise HTTPException(404, "Ingredient not found")
+            raise HTTPException(404, "Ingredient not found or not belongs to user")
 
         item = RecipeItem(
             recipe_id=recipe.id,
@@ -113,7 +121,10 @@ def add_recipe_item(
         if payload.sub_recipe_id == recipe_id:
             raise HTTPException(400, "Recipe cannot reference itself")
 
-        sub_recipe = db.query(Recipe).get(payload.sub_recipe_id)
+        sub_recipe = db.query(Recipe).filter_by(
+        id=payload.sub_recipe_id,
+        user_id=current_user.id
+    ).first()
         if not sub_recipe:
             raise HTTPException(404, "Sub recipe not found")
 
@@ -137,10 +148,10 @@ def add_recipe_item(
     }
 
 @router.get("/{recipe_id}")
-def get_recipe(recipe_id: int, db: Session = Depends(get_db)):
-    recipe = db.query(Recipe).get(recipe_id)
+def get_recipe(recipe_id: int, db: Session = Depends(get_db),current_user: User = Depends(get_current_user)):
+    recipe = db.query(Recipe).filter_by(id=recipe_id, user_id=current_user.id).first()
     if not recipe:
-        raise HTTPException(404, "Recipe not found")
+        raise HTTPException(404, "Recipe not found or not belongs to user")
 
     return {
         "id": recipe.id,
@@ -164,21 +175,21 @@ def get_recipe(recipe_id: int, db: Session = Depends(get_db)):
 @router.post("/ingredients")
 def create_ingredient(
     payload: IngredientCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    # Cegah duplikat
-    exists = (
-        db.query(Ingredient)
-        .filter(Ingredient.name.ilike(payload.name))
-        .first()
-    )
+    exists = db.query(Ingredient).filter_by(
+    name=payload.name.strip(),
+    user_id=current_user.id
+).first()
     if exists:
         raise HTTPException(400, "Ingredient already exists")
 
     ingredient = Ingredient(
-        name=payload.name.strip(),
-        default_unit=payload.default_unit
-    )
+    name=payload.name.strip(),
+    default_unit=payload.default_unit,
+    user_id=current_user.id
+)
 
     db.add(ingredient)
     db.commit()

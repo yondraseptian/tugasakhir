@@ -15,6 +15,7 @@ import { AlertCircle, AlertTriangle, Download } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { apiEndpoints } from "@/lib/api-config";
 import { RecipeMissingPage } from "@/components/recipe-missing-alert";
+import { withProtectedRoute } from "@/components/protected-auth";
 
 interface Ingredient {
   month: string;
@@ -24,7 +25,7 @@ interface Ingredient {
   unit?: string;
 }
 
-export default function IngredientsPage() {
+ function IngredientsPage() {
   const router = useRouter();
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -137,7 +138,13 @@ export default function IngredientsPage() {
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              No ingredient data available from backend.
+              No ingredients found. Please upload sales data first.
+              <Link
+                href="/upload"
+                className="text-primary hover:underline text-sm mb-4 inline-block"
+              >
+                Upload Sales Data
+              </Link>
             </AlertDescription>
           </Alert>
         </div>
@@ -258,3 +265,4 @@ export default function IngredientsPage() {
     </main>
   );
 }
+export default withProtectedRoute(IngredientsPage)

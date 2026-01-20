@@ -9,6 +9,7 @@ import { ForecastChart } from "@/components/forecast-chart"
 import { ChevronRight, AlertCircle } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { apiEndpoints } from "@/lib/api-config"
+import { withProtectedRoute } from "@/components/protected-auth"
 
 interface ForecastData {
   month: string
@@ -16,7 +17,7 @@ interface ForecastData {
   total: number
 }
 
-export default function ForecastPage() {
+ function ForecastPage() {
   const router = useRouter()
   const [forecast, setForecast] = useState<ForecastData[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -175,3 +176,5 @@ useEffect(() => {
     </main>
   )
 }
+
+export default withProtectedRoute(ForecastPage)
